@@ -20,6 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -124,26 +126,65 @@ public class S3CredentialFileSystem extends RawLocalFileSystem {
         new Path(restored));
   }
 
+  /** Expected credentials per fake bucket: access key, secret key, session token. */
+  private static final Map<String, List<String>> EXPECTED_BUCKET_CREDENTIALS =
+      Map.of(
+          UnityCatalogSupport.FAKE_S3_BUCKET,
+          List.of("fakeAccessKey", "fakeSecretKey", "fakeSessionToken"),
+          UnityCatalogSupport.FAKE_S3_BUCKET_B,
+          List.of("fakeAccessKeyB", "fakeSecretKeyB", "fakeSessionTokenB"));
+
   private void checkCredentials(Path f) {
     if (!credentialCheckEnabled) return;
     String bucket = f.toUri().getHost();
-    assertThat(bucket).isEqualTo(UnityCatalogSupport.FAKE_S3_BUCKET);
-    assertCredentials();
+    List<String> expected = EXPECTED_BUCKET_CREDENTIALS.get(bucket);
+    assertThat(expected).withFailMessage("Unexpected bucket %s", bucket).isNotNull();
+    assertCredentials(bucket, expected);
   }
 
-  /** Verifies UC-vended credentials via AwsCredentialsProvider or static Hadoop properties. */
-  private void assertCredentials() {
+  /**
+   * Verifies the credentials applied for {@code bucket} are that bucket's own. Accepts S3A
+   * per-bucket keys when present (the shape a multi-credential client should emit, and the only
+   * shape that can carry two credential sets at once); otherwise falls back to the
+   * AwsCredentialsProvider or the global Hadoop properties.
+   */
+  private void assertCredentials(String bucket, List<String> expected) {
     Configuration conf = getConf();
+    String perBucketAccessKey = conf.get("fs.s3a.bucket." + bucket + ".access.key");
+    if (perBucketAccessKey != null) {
+      assertThat(perBucketAccessKey)
+          .as("access key for bucket %s", bucket)
+          .isEqualTo(expected.get(0));
+      assertThat(conf.get("fs.s3a.bucket." + bucket + ".secret.key"))
+          .as("secret key for bucket %s", bucket)
+          .isEqualTo(expected.get(1));
+      assertThat(conf.get("fs.s3a.bucket." + bucket + ".session.token"))
+          .as("session token for bucket %s", bucket)
+          .isEqualTo(expected.get(2));
+      return;
+    }
     AwsCredentialsProvider p = resolveProvider(conf);
     if (p != null) {
       AwsSessionCredentials creds = (AwsSessionCredentials) p.resolveCredentials();
-      assertThat(creds.accessKeyId()).isEqualTo("fakeAccessKey");
-      assertThat(creds.secretAccessKey()).isEqualTo("fakeSecretKey");
-      assertThat(creds.sessionToken()).isEqualTo("fakeSessionToken");
+      assertThat(creds.accessKeyId())
+          .as("access key for bucket %s", bucket)
+          .isEqualTo(expected.get(0));
+      assertThat(creds.secretAccessKey())
+          .as("secret key for bucket %s", bucket)
+          .isEqualTo(expected.get(1));
+      assertThat(creds.sessionToken())
+          .as("session token for bucket %s", bucket)
+          .isEqualTo(expected.get(2));
     } else {
-      assertThat(conf.get("fs.s3a.access.key")).isEqualTo("fakeAccessKey");
-      assertThat(conf.get("fs.s3a.secret.key")).isEqualTo("fakeSecretKey");
-      assertThat(conf.get("fs.s3a.session.token")).isEqualTo("fakeSessionToken");
+      assertThat(conf.get("fs.s3a.access.key"))
+          .as("access key for bucket %s", bucket)
+          .isEqualTo(expected.get(0));
+      assertThat(conf.get("fs.s3a.secret.key"))
+          .as("secret key for bucket %s", bucket)
+          .isEqualTo(expected.get(1));
+      assertThat(conf.get("fs.s3a.session.token"))
+          .as("session token for bucket %s", bucket)
+          .isEqualTo(expected.get(2));
     }
   }
 

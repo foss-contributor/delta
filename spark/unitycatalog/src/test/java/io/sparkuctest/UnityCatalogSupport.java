@@ -122,6 +122,9 @@ public abstract class UnityCatalogSupport {
   /** The fake S3 bucket name used for local integration tests. */
   static final String FAKE_S3_BUCKET = "fakeS3Bucket";
 
+  /** A second fake S3 bucket with different credentials, for cross-credential-scope tests. */
+  static final String FAKE_S3_BUCKET_B = "fakeS3BucketB";
+
   // Environment variables for configuring access to remote unity catalog server.
   public static final String UC_REMOTE = "UC_REMOTE";
   public static final String UC_URI = "UC_URI";
@@ -253,6 +256,13 @@ public abstract class UnityCatalogSupport {
     serverProps.setProperty("s3.accessKey.0", "fakeAccessKey");
     serverProps.setProperty("s3.secretKey.0", "fakeSecretKey");
     serverProps.setProperty("s3.sessionToken.0", "fakeSessionToken");
+
+    // A second bucket with different credentials, so tests can place tables under two
+    // credential scopes (e.g. a shallow clone whose base table lives in another bucket).
+    serverProps.setProperty("s3.bucketPath.1", "s3://" + FAKE_S3_BUCKET_B);
+    serverProps.setProperty("s3.accessKey.1", "fakeAccessKeyB");
+    serverProps.setProperty("s3.secretKey.1", "fakeSecretKeyB");
+    serverProps.setProperty("s3.sessionToken.1", "fakeSessionTokenB");
     return serverProps;
   }
 
